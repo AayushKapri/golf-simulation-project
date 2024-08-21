@@ -1,0 +1,793 @@
+---
+title: "Golf course simulator code"
+author: "Aayush"
+date: "2024-02-24"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+---
+
+```{r ,warning=FALSE, results="hide"}
+#load latex for rendering
+library(tinytex)
+# Load the readxl package
+library(readxl)
+library(tidyverse)
+
+# Define the Excel file path
+excel_file_path <- "C:\\Users\\Aayush\\Documents\\Golf project\\SustainableGolfSimulator.xlsx"
+
+# Get sheet names from the Excel file
+sheet_names <- excel_sheets(excel_file_path)
+
+# Initialize an empty list for data frames
+all_data <- list()
+
+# Read each sheet into a data frame and store in the list
+for (sheet in sheet_names) {
+  sheet_data <- read_excel(excel_file_path, sheet = sheet)
+  all_data[[sheet]] <- sheet_data
+}
+
+# Access data frames using sheet names, e.g., all_data$Sheet1
+
+
+```
+
+```{r}
+# Creating the Parameters data frame
+Parameters <- data.frame(
+  `Tee Shot Distance` = 250,
+  `SD Angle` = 8,
+  `Hole Length` = 380,
+  `Center to FW Edge` = 20,
+  `Center to Hazard Edge` = 40
+)
+
+# Print the Parameters data frame
+print(Parameters)
+
+
+```
+
+```{r Outcomes}
+# Create the data frame
+Outcomes <- data.frame(
+  Approach_Dist = 130:240,
+  F_ES = c(2.85, 2.855, 2.86, 2.865, 2.87, 2.875, 2.88, 2.885, 2.89, 
+           2.895, 2.9, rep(NA, 100)),
+  R_ES = c(3.05, 3.055, 3.06, 3.065, 3.07, 3.075, 3.08, 3.085, 3.09, 
+           3.095, rep(NA, 101)),
+  H_ES = c(4.05, 4.055, 4.06, 4.065, 4.07, 4.075, 4.08, 4.085, 4.09, 
+           4.095, rep(NA, 101))
+)
+
+# Print the data frame
+head(Outcomes)
+
+# Update row 11 based on F_ES
+Outcomes$R_ES[11] <- Outcomes$F_ES[11] + 0.2
+Outcomes$H_ES[11] <- Outcomes$R_ES[11] + 1
+
+# Print the updated data frame
+head(Outcomes)
+
+# Fill in values starting from row 12
+for (i in 12:nrow(Outcomes)) {
+  Outcomes$F_ES[i] <- Outcomes$F_ES[i - 1] + 0.01
+  Outcomes$R_ES[i] <- Outcomes$F_ES[i] + 0.2
+  Outcomes$H_ES[i] <- Outcomes$R_ES[i] + 1
+}
+
+# Print the final data frame
+head(Outcomes)
+
+
+```
+
+
+
+
+```{r, warning=FALSE}
+
+# Define the function to run the golf simulator
+runGolfSimulatorPar4 <- function(num_trials,
+                                 Tee.Shot.Distance = 250,
+                                 SD.Angle = 8,
+                                 Hole.Length = 380,
+                                 Center.to.FW.Edge = 20,
+                                 Center.to.Hazard.Edge = 40) {
+  # Create the Simulator data frame
+  Simulator <- data.frame(
+    Trial = 1:num_trials,
+    Tee_Degrees = rep(NA, num_trials),
+    Tee_Length = rep(NA, num_trials),
+    Tee_Width = rep(NA, num_trials),
+    Outcome = rep(NA, num_trials),
+    Approach_Dist = rep(NA, num_trials),
+    Score = rep(NA, num_trials)
+  )
+  
+  # Run the simulation for each trial
+  for (i in 1:nrow(Simulator)) {
+    Simulator$Tee_Degrees_no_abs[i] <- SD.Angle * 
+      (rnorm(1, mean = 0, sd = 1))
+    
+    Simulator$Tee_Width_no_abs[i] <- Tee.Shot.Distance * 
+      sin(Simulator$Tee_Degrees_no_abs[i] * (pi/180))
+    
+    Simulator$Tee_Degrees[i] <- SD.Angle * 
+      abs(rnorm(1, mean = 0, sd = 1))
+    
+    Simulator$Tee_Length[i] <- Tee.Shot.Distance * 
+      cos(Simulator$Tee_Degrees[i] * (pi/180))
+    
+    Simulator$Tee_Length_no_abs[i] <- Tee.Shot.Distance * 
+      cos(Simulator$Tee_Degrees_no_abs[i] * (pi/180))
+    
+    Simulator$Tee_Width[i] <- Tee.Shot.Distance * 
+      sin(Simulator$Tee_Degrees[i] * (pi/180))
+    
+    Simulator$Outcome[i] <- ifelse(Simulator$Tee_Width[i] < 
+                                   Center.to.FW.Edge, "F", 
+                                   ifelse(Simulator$Tee_Width[i] < 
+                                          Center.to.Hazard.Edge, 
+                                          "R", "H"))
+    
+    Simulator$Approach_Dist[i] <- sqrt((Hole.Length - 
+                                        Simulator$Tee_Length[i])^2 + 
+                                       Simulator$Tee_Width[i]^2)
+    
+    Simulator$Score[i] <- ifelse(Simulator$Outcome[i] == 'F',
+                                 Outcomes[which(Outcomes$Approach_Dist == 
+                                 floor(Simulator$Approach_Dist[i])), 
+                                 "F_ES"] + 1,
+                                 ifelse(Simulator$Outcome[i] == 'R',
+                                        Outcomes[which(Outcomes$Approach_Dist == 
+                                        floor(Simulator$Approach_Dist[i])), 
+                                        "R_ES"] + 1,
+                                        Outcomes[which(Outcomes$Approach_Dist == 
+                                        floor(Simulator$Approach_Dist[i])), 
+                                        "H_ES"] + 1))
+  }
+  
+  # Calculate outcome distribution
+  distribution <- Simulator %>% 
+    group_by(Outcome) %>% 
+    count() %>% 
+    mutate(percent = n / num_trials * 100)
+  
+  # Print the results
+  print(Simulator)
+  print(mean(Simulator$Score))
+  print(distribution)
+  
+  # Plot the original setup
+  rects <- data.frame(xstart = c(-80, -40, -20, 20, 40),
+                      xend = c(-40, -20, 20, 40, 80),
+                      col = c("red", "darkgreen", "green", 
+                              "darkgreen", "red"))
+  
+  custom_labels <- c("Hazard" = "red", "Rough" = "darkgreen", 
+                     "Fairway" = "green")
+  
+  plot_1 <- ggplot(data = Simulator) +
+    geom_point(aes(x = Tee_Width_no_abs, y = Tee_Length_no_abs), 
+               alpha = 0.15, size = 3) +
+    geom_rect(data = rects, 
+              aes(xmin = xstart, xmax = xend, ymin = -Inf, ymax = Inf, 
+                  fill = col), alpha = 0.35) +
+    scale_fill_manual(values = rects$col, breaks = unique(rects$col), 
+                      labels = c("Hazard", "Rough", "Fairway")) +
+    guides(fill = guide_legend(title = "Legend")) +
+    scale_x_continuous(breaks = seq(-80, 80, by = 10), 
+                       limits = c(-80, 80), minor_breaks = NULL) +
+    scale_y_continuous(limits = c(230, 250), minor_breaks = NULL) +
+    theme_minimal() +
+    theme(
+      axis.title.x = element_text(size = 14),
+      axis.title.y = element_text(size = 14),
+      axis.text.x = element_text(size = 12),
+      axis.text.y = element_text(size = 12),
+      legend.title = element_text(size = 14),
+      legend.text = element_text(size = 12),
+      plot.title = element_text(size = 16, hjust = 0.5)
+    ) +
+    labs(x = "Tee Width", y = "Tee Length", title = "Original Setup")
+  
+  print(plot_1)
+  
+  ggsave("plot_1.png", plot = plot_1, width = 21, height = 7, dpi = 300)
+  
+  # Plot the modified setup
+  rects2 <- data.frame(xstart = c(-80, -30, -10, 10, 30),
+                       xend = c(-30, -10, 10, 30, 80),
+                       col = c("red", "darkgreen", "green", 
+                               "darkgreen", "red"))
+  
+  custom_labels2 <- c("Hazard" = "red", "Rough" = "darkgreen", 
+                      "Fairway" = "green")
+  
+  plot_2 <- ggplot(data = Simulator) +
+    geom_point(aes(x = Tee_Width_no_abs, y = Tee_Length_no_abs), 
+               alpha = 0.15, size = 3) +
+    geom_rect(data = rects2, 
+              aes(xmin = xstart, xmax = xend, ymin = -Inf, ymax = Inf, 
+                  fill = col), alpha = 0.35) +
+    scale_fill_manual(values = rects2$col, breaks = unique(rects$col), 
+                      labels = c("Hazard", "Rough", "Fairway")) +
+    guides(fill = guide_legend(title = "Legend")) +
+    scale_x_continuous(breaks = seq(-80, 80, by = 10), 
+                       limits = c(-80, 80), minor_breaks = NULL) +
+    scale_y_continuous(limits = c(230, 250), minor_breaks = NULL) +
+    theme_minimal() +
+    theme(
+      axis.title.x = element_text(size = 14),
+      axis.title.y = element_text(size = 14),
+      axis.text.x = element_text(size = 12),
+      axis.text.y = element_text(size = 12),
+      legend.title = element_text(size = 14),
+      legend.text = element_text(size = 12),
+      plot.title = element_text(size = 16, hjust = 0.5)
+    ) +
+    labs(x = "Tee Width", y = "Tee Length", title = "Modified Setup")
+  
+  print(plot_2)
+  
+  ggsave("plot_2.png", plot = plot_2, width = 21, height = 7, dpi = 300)
+}
+
+# Run the golf simulator with 500 trials
+runGolfSimulatorPar4(50)
+
+
+```
+
+
+```{r}
+library(tidyverse)
+Par3Out <- all_data$Par3Out
+
+Par3Out <- Par3Out %>% 
+  rename(Approach_Dist = 'Approach Dist', G_ES = 'G E(S)', 
+         R_ES = 'R E(S)', H_ES = 'H E(S)')
+
+```
+
+
+```{r}
+
+runGolfSimulator2 <- function(num_trials,
+                              Tee.Shot.Distance = 120,
+                              SD.Angle = 8,
+                              Semicircle.Green.Radius = 25,
+                              Center.to.Hazard.Edge = 30) {
+  # Create Simulator data frame
+  Simulator <- data.frame(
+    Trial = 1:num_trials,
+    Tee_Degrees = rep(NA, num_trials),
+    Tee_Length = rep(NA, num_trials),
+    Tee_Width = rep(NA, num_trials),
+    Outcome = rep(NA, num_trials),
+    Approach_Dist = rep(NA, num_trials),
+    Score = rep(NA, num_trials)
+  )
+
+  for (i in 1:nrow(Simulator)) {
+    Simulator$Tee_Degrees_no_abs[i] <- SD.Angle * 
+      (rnorm(1, mean = 0, sd = 1))
+    
+    Simulator$Tee_Width_no_abs[i] <- Tee.Shot.Distance * 
+      sin(Simulator$Tee_Degrees_no_abs[i] * (pi/180))
+    
+    Simulator$Tee_Degrees[i] <- SD.Angle * 
+      abs(rnorm(1, mean = 0, sd = 1))
+
+    Simulator$Tee_Length[i] <- Tee.Shot.Distance * 
+      cos(Simulator$Tee_Degrees[i] * (pi/180))
+    
+    Simulator$Tee_Length_no_abs[i] <- Tee.Shot.Distance * 
+      cos(Simulator$Tee_Degrees_no_abs[i] * (pi/180))
+
+    Simulator$Tee_Width[i] <- Tee.Shot.Distance * 
+      sin(Simulator$Tee_Degrees[i] * (pi/180))
+    
+    Simulator$Approach_Dist[i] <- sqrt((Tee.Shot.Distance - 
+      Simulator$Tee_Length[i])^2 + Simulator$Tee_Width[i]^2)
+    
+    Simulator$Outcome[i] <- ifelse(Simulator$Approach_Dist[i] < 
+      Semicircle.Green.Radius, "G", ifelse(Simulator$Tee_Width[i] < 
+      Center.to.Hazard.Edge, "R", "H"))
+    
+    # Calculate Score based on Outcome
+    temp_score <- ifelse(Simulator$Outcome[i] == 'G',
+      Par3Out[which(Par3Out$Approach_Dist == floor(
+      Simulator$Approach_Dist[i])), "G_ES"] + 1,
+      ifelse(Simulator$Outcome[i] == 'R',
+      Par3Out[which(Par3Out$Approach_Dist == floor(
+      Simulator$Approach_Dist[i])), "R_ES"] + 1,
+      Par3Out[which(Par3Out$Approach_Dist == floor(
+      Simulator$Approach_Dist[i])), "H_ES"] + 1))
+
+    # Unlist to convert to numeric vector
+    temp_score <- unlist(temp_score)
+
+    # Assign the value to Score
+    Simulator$Score[i] <- temp_score[1]
+  }
+  
+  distribution <- Simulator %>% 
+    group_by(Outcome) %>% 
+    count() %>% 
+    mutate(percent = n/num_trials * 100)
+
+  # Print the updated Simulator data frame
+  print(Simulator)
+  cat("Average:", mean(Simulator$Score))
+  print(distribution)
+  
+  # Define rectangles data
+  rects <- data.frame(xstart = c(-90, -30, -10, 10, 30),
+                      xend = c(-30, -10, 10, 30, 90),
+                      col = c("red", "darkgreen", "green", "darkgreen", "red"))
+
+  custom_labels <- c("Hazard" = "red", "Rough" = "darkgreen", "Fairway" = "green")
+
+  # Create the plot
+  plot_2 <- ggplot(data = Simulator) +
+    geom_point(aes(x = Tee_Width_no_abs, y = Tee_Length_no_abs), alpha = 0.15) +
+    geom_rect(data = rects, aes(xmin = xstart, xmax = xend, ymin = -Inf, ymax = Inf, 
+                                fill = col), alpha = 0.35) +
+    scale_fill_manual(values = rects$col, breaks = unique(rects$col), 
+                      labels = c("Hazard", "Rough", "Fairway")) + 
+    guides(fill = guide_legend(title = "Legend")) +
+    scale_x_continuous(breaks = seq(-100, 100, by = 10)) +
+    theme_minimal() +
+    labs(x = "Tee Width", y = "Tee Length", t)
+
+  print(plot_2)
+
+  ggsave("plot_3.png", plot = plot_2, width = 10, height = 8, dpi = 300)
+}
+
+# Call the function with the desired number of trials
+runGolfSimulator2(50)  # You can replace 1100 with any number of trials you want
+
+```
+
+
+```{r}
+# Function to calculate the maintenance cost of a golf course 
+calculate_maintenance_cost <- function(length_manicured_land, 
+                                       width_manicured_land, 
+                                       radius_green, 
+                                       length_fairway, 
+                                       width_fairway, 
+                                       length_tee_box, 
+                                       width_tee_box, 
+                                       length_bunker, 
+                                       width_bunker, 
+                                       cost_per_unit_square_green = 25.07, 
+                                       cost_per_unit_square_fairway = 0.36, 
+                                       cost_per_unit_square_tee_box = 3.03, 
+                                       cost_per_unit_square_bunker = 20.23, 
+                                       cost_per_unit_square_rough = 0.04) {
+  
+  # Calculate the total area of the manicured land 
+  area_manicured_land <- length_manicured_land * width_manicured_land
+  
+  # Calculate the area of the green (semicircle) 
+  area_green <- (pi * radius_green^2) / 2
+  
+  # Calculate the area of the fairway 
+  area_fairway <- length_fairway * width_fairway
+  
+  # Calculate the area of the tee box 
+  area_tee_box <- length_tee_box * width_tee_box
+  
+  # Calculate the area of the bunker 
+  area_bunker <- length_bunker * width_bunker
+  
+  # Calculate the area of the rough (remaining area after other features) 
+  area_rough <- area_manicured_land - area_green - area_fairway - 
+                area_tee_box - area_bunker
+  
+  # Calculate maintenance cost for the green 
+  total_cost_green <- area_green * cost_per_unit_square_green
+  
+  # Calculate maintenance cost for the fairway 
+  total_cost_fairway <- area_fairway * cost_per_unit_square_fairway
+  
+  # Calculate maintenance cost for the tee box 
+  total_cost_tee_box <- area_tee_box * cost_per_unit_square_tee_box
+  
+  # Calculate maintenance cost for the bunker 
+  total_cost_bunker <- area_bunker * cost_per_unit_square_bunker
+  
+  # Calculate maintenance cost for the rough 
+  total_cost_rough <- area_rough * cost_per_unit_square_rough
+  
+  # Calculate the total maintenance cost of the golf course 
+  total_cost <- total_cost_green + total_cost_fairway + total_cost_tee_box +
+                total_cost_bunker + total_cost_rough
+  
+  # Return the total maintenance cost 
+  return(total_cost)
+}
+
+# Example usage of the function with specified dimensions 
+cost <- calculate_maintenance_cost(length_manicured_land = 100, 
+                                   width_manicured_land = 80, 
+                                   radius_green = 20, 
+                                   length_fairway = 60, 
+                                   width_fairway = 20, 
+                                   length_tee_box = 10, 
+                                   width_tee_box = 10, 
+                                   length_bunker = 20, 
+                                   width_bunker = 10)
+
+# Print the calculated maintenance cost 
+cat("Cost of Maintenance:", cost, "\n")
+
+```
+
+
+
+```{r}
+# Par 4 Simulator and Cost Difference Analysis
+library(tidyverse)
+
+# Define the Par 4 golf simulator function
+runGolfSimulatorPar4 <- function(num_trials,
+                                 Tee.Shot.Distance = 250,
+                                 SD.Angle = 8,
+                                 Hole.Length = 380,
+                                 Center.to.FW.Edge = 20,
+                                 Center.to.Hazard.Edge = 40) {
+  # Initialize the simulator data frame
+  Simulator <- data.frame(
+    Trial = 1:num_trials,
+    Tee_Degrees = rep(NA, num_trials),
+    Tee_Length = rep(NA, num_trials),
+    Tee_Width = rep(NA, num_trials),
+    Outcome = rep(NA, num_trials),
+    Approach_Dist = rep(NA, num_trials),
+    Score = rep(NA, num_trials)
+  )
+
+  for (i in 1:nrow(Simulator)) {
+    # Simulate the angle and width of the tee shot without taking absolute values
+    Simulator$Tee_Degrees_no_abs[i] <- SD.Angle * (rnorm(1, mean = 0, sd = 1))
+    Simulator$Tee_Width_no_abs[i] <- Tee.Shot.Distance * 
+                                     sin(Simulator$Tee_Degrees_no_abs[i] * (pi/180))
+
+    # Simulate the angle and width of the tee shot (absolute values)
+    Simulator$Tee_Degrees[i] <- SD.Angle * abs(rnorm(1, mean = 0, sd = 1))
+    Simulator$Tee_Length[i] <- Tee.Shot.Distance * 
+                               cos(Simulator$Tee_Degrees[i] * (pi/180))
+    Simulator$Tee_Length_no_abs[i] <- Tee.Shot.Distance * 
+                                      cos(Simulator$Tee_Degrees_no_abs[i] * (pi/180))
+    Simulator$Tee_Width[i] <- Tee.Shot.Distance * 
+                              sin(Simulator$Tee_Degrees[i] * (pi/180))
+
+    # Determine outcome based on shot width
+    Simulator$Outcome[i] <- ifelse(Simulator$Tee_Width[i] < Center.to.FW.Edge, 
+                                   "F", ifelse(Simulator$Tee_Width[i] < 
+                                   Center.to.Hazard.Edge, "R", "H"))
+
+    # Calculate approach distance to the hole
+    Simulator$Approach_Dist[i] <- sqrt((Hole.Length - 
+                                        Simulator$Tee_Length[i])^2 + 
+                                        Simulator$Tee_Width[i]^2)
+
+    # Assign score based on outcome and approach distance
+    Simulator$Score[i] <- ifelse(Simulator$Outcome[i] == 'F',
+                                 Outcomes[which(Outcomes$Approach_Dist == 
+                                 floor(Simulator$Approach_Dist[i])), 
+                                 "F_ES"] + 1, ifelse(Simulator$Outcome[i] == 'R',
+                                 Outcomes[which(Outcomes$Approach_Dist == 
+                                 floor(Simulator$Approach_Dist[i])), 
+                                 "R_ES"] + 1, Outcomes[which(Outcomes$Approach_Dist == 
+                                 floor(Simulator$Approach_Dist[i])), 
+                                 "H_ES"] + 1))
+  }
+
+  # Return the average score from the simulation
+  mean_score <- mean(Simulator$Score)
+  return(mean_score)
+}
+
+# Define the cost calculation function for golf course maintenance
+calculate_maintenance_cost <- function(length_manicured_land, 
+                                       width_manicured_land, 
+                                       radius_green, 
+                                       length_fairway, 
+                                       width_fairway, 
+                                       length_tee_box, 
+                                       width_tee_box, 
+                                       length_bunker, 
+                                       width_bunker, 
+                                       cost_per_unit_square_green = 25.07, 
+                                       cost_per_unit_square_fairway = 0.36, 
+                                       cost_per_unit_square_tee_box = 3.03, 
+                                       cost_per_unit_square_bunker = 20.23, 
+                                       cost_per_unit_square_rough = 0.04) {
+  
+  # Calculate the area of the manicured land
+  area_manicured_land <- length_manicured_land * width_manicured_land
+  area_green <- (pi * radius_green^2) / 2
+  area_fairway <- length_fairway * width_fairway
+  area_tee_box <- length_tee_box * width_tee_box
+  area_bunker <- length_bunker * width_bunker
+  area_rough <- area_manicured_land - area_green - area_fairway - 
+                area_tee_box - area_bunker
+
+  # Calculate the total maintenance cost for each area
+  total_cost_green <- area_green * cost_per_unit_square_green
+  total_cost_fairway <- area_fairway * cost_per_unit_square_fairway
+  total_cost_tee_box <- area_tee_box * cost_per_unit_square_tee_box
+  total_cost_bunker <- area_bunker * cost_per_unit_square_bunker
+  total_cost_rough <- area_rough * cost_per_unit_square_rough
+
+  # Return the total maintenance cost for the golf course
+  total_cost <- total_cost_green + total_cost_fairway + 
+                total_cost_tee_box + total_cost_bunker + 
+                total_cost_rough
+  return(total_cost)
+}
+
+# Set parameters for each golf course
+course1_params <- list(
+  num_trials = 1000,
+  Tee.Shot.Distance = 250,
+  SD.Angle = 8,
+  Hole.Length = 400,
+  Center.to.FW.Edge = 20,
+  Center.to.Hazard.Edge = 40
+)
+
+course2_params <- list(
+  num_trials = 1000,
+  Tee.Shot.Distance = 250,
+  SD.Angle = 8,
+  Hole.Length = 420,
+  Center.to.FW.Edge = 20,
+  Center.to.Hazard.Edge = 40
+)
+
+# Calculate stroke averages for each course
+course1_stroke_avg <- do.call(runGolfSimulatorPar4, course1_params)
+course2_stroke_avg <- do.call(runGolfSimulatorPar4, course2_params)
+
+# Set maintenance cost parameters for each course
+cost_params_course1 <- list(
+  length_manicured_land = 400, width_manicured_land = 80,
+  radius_green = 20, length_fairway = 400, width_fairway = 40,
+  length_tee_box = 10, width_tee_box = 10, length_bunker = 20, 
+  width_bunker = 10, cost_per_unit_square_green = 2, 
+  cost_per_unit_square_fairway = 1.5, cost_per_unit_square_tee_box = 1.2, 
+  cost_per_unit_square_bunker = 1.8, cost_per_unit_square_rough = 1
+)
+
+cost_params_course2 <- list(
+  length_manicured_land = 420, width_manicured_land = 80,
+  radius_green = 20, length_fairway = 420, width_fairway = 40,
+  length_tee_box = 10, width_tee_box = 10, length_bunker = 20, 
+  width_bunker = 10, cost_per_unit_square_green = 2, 
+  cost_per_unit_square_fairway = 1.5, cost_per_unit_square_tee_box = 1.2, 
+  cost_per_unit_square_bunker = 1.8, cost_per_unit_square_rough = 1
+)
+
+# Calculate maintenance costs for each course
+course1_cost <- do.call(calculate_maintenance_cost, cost_params_course1)
+course2_cost <- do.call(calculate_maintenance_cost, cost_params_course2)
+
+# Calculate manicured land area for each course
+length_manicured_land_course1 <- course1_params$Hole.Length
+width_of_manicured_land_course1 <- 2 * course1_params$Center.to.Hazard.Edge
+course1_manicured_land <- length_manicured_land_course1 * width_of_manicured_land_course1
+
+length_manicured_land_course2 <- course2_params$Hole.Length
+width_of_manicured_land_course2 <- 2 * course2_params$Center.to.Hazard.Edge
+course2_manicured_land <- length_manicured_land_course2 * width_of_manicured_land_course2
+
+# Compare stroke averages, maintenance costs, and manicured land areas
+stroke_diff <- course2_stroke_avg - course1_stroke_avg
+cost_diff <- course2_cost - course1_cost
+manicured_land_diff <- course2_manicured_land - course1_manicured_land
+
+# Calculate percentage changes
+stroke_percent_change <- (stroke_diff / course1_stroke_avg) * 100
+cost_percent_change <- (cost_diff / course1_cost) * 100
+manicured_land_percent_change <- (manicured_land_diff / course1_manicured_land) * 100
+
+# Print the results of the comparison
+cat("Course 1 Stroke Average:", course1_stroke_avg, "\n")
+cat("Course 2 Stroke Average:", course2_stroke_avg, "\n")
+cat("Difference in Stroke Averages:", stroke_diff, "\n")
+cat("Percentage Change in Stroke Averages:", stroke_percent_change, "%\n\n")
+
+cat("Course 1 Maintenance Cost:", course1_cost, "\n")
+cat("Course 2 Maintenance Cost:", course2_cost, "\n")
+cat("Difference in Maintenance Costs:", cost_diff, "\n")
+cat("Percentage Change in Maintenance Costs:", cost_percent_change, "\n")
+
+
+```
+
+```{r}
+
+#par3 simulator and cost analysis
+
+library(tidyverse)
+
+# Define the new golf simulator function
+runGolfSimulator2 <- function(num_trials, Tee.Shot.Distance = 120, SD.Angle = 8, 
+                              Semicircle.Green.Radius = 25, 
+                              Center.to.Hazard.Edge = 30) {
+  # Create Simulator data frame
+  Simulator <- data.frame(
+    Trial = 1:num_trials,
+    Tee_Degrees = rep(NA, num_trials),
+    Tee_Length = rep(NA, num_trials),
+    Tee_Width = rep(NA, num_trials),
+    Outcome = rep(NA, num_trials),
+    Approach_Dist = rep(NA, num_trials),
+    Score = rep(NA, num_trials)
+  )
+
+  for (i in 1:nrow(Simulator)) {
+    Simulator$Tee_Degrees_no_abs[i] <- SD.Angle * 
+                                       (rnorm(1, mean = 0, sd = 1))
+    Simulator$Tee_Width_no_abs[i] <- Tee.Shot.Distance * 
+                                     sin(Simulator$Tee_Degrees_no_abs[i] * 
+                                     (pi/180))
+    Simulator$Tee_Degrees[i] <- SD.Angle * abs(rnorm(1, mean = 0, sd = 1))
+    Simulator$Tee_Length[i] <- Tee.Shot.Distance * 
+                               cos(Simulator$Tee_Degrees[i] * (pi/180))
+    Simulator$Tee_Length_no_abs[i] <- Tee.Shot.Distance * 
+                                      cos(Simulator$Tee_Degrees_no_abs[i] * 
+                                      (pi/180))
+    Simulator$Tee_Width[i] <- Tee.Shot.Distance * 
+                              sin(Simulator$Tee_Degrees[i] * (pi/180))
+    Simulator$Approach_Dist[i] <- sqrt((Tee.Shot.Distance - 
+                                       Simulator$Tee_Length[i])^2 + 
+                                       Simulator$Tee_Width[i]^2)
+    Simulator$Outcome[i] <- ifelse(Simulator$Approach_Dist[i] < 
+                                   Semicircle.Green.Radius, "G", 
+                                   ifelse(Simulator$Tee_Width[i] < 
+                                   Center.to.Hazard.Edge, "R", "H"))
+
+    temp_score <- ifelse(Simulator$Outcome[i] == 'G', 
+                         Par3Out[which(Par3Out$Approach_Dist == 
+                         floor(Simulator$Approach_Dist[i])), "G_ES"] + 1, 
+                         ifelse(Simulator$Outcome[i] == 'R', 
+                         Par3Out[which(Par3Out$Approach_Dist == 
+                         floor(Simulator$Approach_Dist[i])), "R_ES"] + 1, 
+                         Par3Out[which(Par3Out$Approach_Dist == 
+                         floor(Simulator$Approach_Dist[i])), "H_ES"] + 1))
+    temp_score <- unlist(temp_score)
+    Simulator$Score[i] <- temp_score[1]
+  }
+  
+  mean_score <- mean(Simulator$Score)
+  return(mean_score)
+}
+
+# Define the cost calculation function
+calculate_maintenance_cost <- function(length_manicured_land, 
+                                       width_manicured_land, radius_green,
+                                       length_fairway, width_fairway, 
+                                       length_tee_box, width_tee_box,
+                                       length_bunker, width_bunker, 
+                                       cost_per_unit_square_green = 25.07, 
+                                       cost_per_unit_square_fairway = 0.36,
+                                       cost_per_unit_square_tee_box = 3.03, 
+                                       cost_per_unit_square_bunker = 20.23, 
+                                       cost_per_unit_square_rough = 0.04) {
+  area_manicured_land <- length_manicured_land * width_manicured_land
+  area_green <- (pi * radius_green^2) / 2
+  area_fairway <- length_fairway * width_fairway
+  area_tee_box <- length_tee_box * width_tee_box
+  area_bunker <- length_bunker * width_bunker
+  area_rough <- area_manicured_land - area_green - area_fairway - 
+                area_tee_box - area_bunker
+
+  total_cost_green <- area_green * cost_per_unit_square_green
+  total_cost_fairway <- area_fairway * cost_per_unit_square_fairway
+  total_cost_tee_box <- area_tee_box * cost_per_unit_square_tee_box
+  total_cost_bunker <- area_bunker * cost_per_unit_square_bunker
+  total_cost_rough <- area_rough * cost_per_unit_square_rough
+
+  total_cost <- total_cost_green + total_cost_fairway +
+                total_cost_tee_box + total_cost_bunker + total_cost_rough
+
+  return(total_cost)
+}
+
+# Set parameters for each golf course
+course1_params <- list(
+  num_trials = 1000,
+  Tee.Shot.Distance = 150,
+  SD.Angle = 8,
+  Semicircle.Green.Radius = 25,
+  Center.to.Hazard.Edge = 30
+)
+
+course2_params <- list(
+  num_trials = 1000,
+  Tee.Shot.Distance = 170,
+  SD.Angle = 8,
+  Semicircle.Green.Radius = 25,
+  Center.to.Hazard.Edge = 30
+)
+
+# Calculate stroke averages using the new function
+course1_stroke_avg <- do.call(runGolfSimulator2, course1_params)
+course2_stroke_avg <- do.call(runGolfSimulator2, course2_params)
+
+# Set maintenance cost parameters for each course
+cost_params_course1 <- list(
+  length_manicured_land = 150, width_manicured_land = 60,
+  radius_green = 25, length_fairway = 120, width_fairway = 40,
+  length_tee_box = 10, width_tee_box = 10, length_bunker = 20, 
+  width_bunker = 10, cost_per_unit_square_green = 2, 
+  cost_per_unit_square_fairway = 1.5, cost_per_unit_square_tee_box = 1.2, 
+  cost_per_unit_square_bunker = 1.8, cost_per_unit_square_rough = 1
+)
+
+cost_params_course2 <- list(
+  length_manicured_land = 170, width_manicured_land = 60,
+  radius_green = 25, length_fairway = 120, width_fairway = 40,
+  length_tee_box = 10, width_tee_box = 10, length_bunker = 20, 
+  width_bunker = 10, cost_per_unit_square_green = 2, 
+  cost_per_unit_square_fairway = 1.5, cost_per_unit_square_tee_box = 1.2, 
+  cost_per_unit_square_bunker = 1.8, cost_per_unit_square_rough = 1
+)
+
+# Calculate maintenance costs using the function
+course1_cost <- do.call(calculate_maintenance_cost, cost_params_course1)
+course2_cost <- do.call(calculate_maintenance_cost, cost_params_course2)
+
+# Extract parameters for manicured land area calculation
+length_manicured_land_course1 <- course1_params$Tee.Shot.Distance
+width_of_manicured_land_course1 <- 2 * course1_params$Center.to.Hazard.Edge
+course1_manicured_land <- length_manicured_land_course1 * 
+                          width_of_manicured_land_course1
+
+length_manicured_land_course2 <- course2_params$Tee.Shot.Distance
+width_of_manicured_land_course2 <- 2 * course2_params$Center.to.Hazard.Edge
+course2_manicured_land <- length_manicured_land_course2 * 
+                          width_of_manicured_land_course2
+
+# Compare stroke averages and costs
+stroke_diff <- course2_stroke_avg - course1_stroke_avg
+cost_diff <- course2_cost - course1_cost
+manicured_land_diff <- course2_manicured_land - course1_manicured_land
+
+# Calculate percentage changes
+stroke_percent_change <- (stroke_diff / course1_stroke_avg) * 100
+cost_percent_change <- (cost_diff / course1_cost) * 100
+manicured_land_percent_change <- (manicured_land_diff / 
+                                  course1_manicured_land) * 100
+
+# Print results
+cat("Course 1 Stroke Average:", course1_stroke_avg, "\n")
+cat("Course 2 Stroke Average:", course2_stroke_avg, "\n")
+cat("Difference in Stroke Averages:", stroke_diff, "\n")
+cat("Percentage Change in Stroke Averages:", stroke_percent_change, "%\n\n")
+
+cat("Course 1 Maintenance Cost:", course1_cost, "\n")
+cat("Course 2 Maintenance Cost:", course2_cost, "\n")
+cat("Difference in Maintenance Costs:", cost_diff, "\n")
+cat("Percentage Change in Maintenance Costs:", cost_percent_change, "%\n\n")
+
+cat("Course 1 Manicured Land Area:", course1_manicured_land, "\n")
+cat("Course 2 Manicured Land Area:", course2_manicured_land, "\n")
+cat("Difference in Manicured Land Area:", manicured_land_diff, "\n")
+cat("Percentage Change in Manicured Land Area:", 
+    manicured_land_percent_change, "%\n")
+
+
+```
